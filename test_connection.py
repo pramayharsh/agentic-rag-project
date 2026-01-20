@@ -7,11 +7,10 @@ load_dotenv()
 
 def test_groq():
     try:
-        # Initialize the Groq LLM
-        # We use Llama3-70b-8192 as it's great for reasoning
+        # Initializing with the latest Llama 3.3 model
         llm = ChatGroq(
             temperature=0,
-            model_name="llama3-70b-8192",
+            model_name="llama-3.3-70b-versatile",
             groq_api_key=os.getenv("GROQ_API_KEY")
         )
         
