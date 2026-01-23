@@ -1,5 +1,22 @@
+# Virtual Environment
 venv/
+ENV/
 .env
+
+# Python specific
 __pycache__/
-.DS_Store
+*.pyc
+*.pyo
+*.pyd
+
+# Vector Databases (Local)
+chroma_db/
+faiss_index/
+
+# Data and Logs
 data/
+*.log
+
+# OS specific
+.DS_Store
+Thumbs.db
