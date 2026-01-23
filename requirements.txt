@@ -1,9 +1,9 @@
 langchain
+langchain-community
 langgraph
 langchain-groq
-langchain-huggingface
-sentence-transformers
-chromadb
-python-dotenv
+langchain-google-genai
+faiss-cpu
 pypdf
+python-dotenv
 tiktoken
