@@ -6,6 +6,5 @@ langchain-google-genai
 faiss-cpu
 pypdf
 python-dotenv
-tiktoken
-duckduckgo-search
+streamlit
 ddgs

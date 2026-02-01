@@ -16,60 +16,77 @@ class State(TypedDict):
 llm = ChatGroq(model_name="llama-3.1-8b-instant", temperature=0)
 
 def call_model(state: State):
+    # We count how many times a search has happened in the message history
+    search_count = sum(1 for m in state["messages"] if "RESULTS:" in m.content)
+
     system_prompt = SystemMessage(
         content=(
-            "You are a 2025 AI Research Assistant. "
-            "1. To search PDF: SEARCH_PDF: [query]\n"
-            "2. To search Web: SEARCH_WEB: [query]\n"
-            "If the question is about current events (like the President), you MUST use SEARCH_WEB.\n"
-            "IMPORTANT: Write the search command on its own line. Do not say 'I am searching'. Just write the command."
+            "You are a strict research assistant. \n"
+            f"Current search count: {search_count}\n"
+            "INSTRUCTIONS:\n"
+            "1. Search the Internal PDF ONCE using SEARCH_PDF: [query].\n"
+            "2. If you already have 'INTERNAL PDF RESULTS' in your history, DO NOT search the PDF again.\n"
+            "3. If the PDF results are missing the info, search the Web ONCE using SEARCH_WEB: [query].\n"
+            "4. If you have any results (PDF or Web), STOP SEARCHING and provide the final answer.\n"
+            "5. Never output a SEARCH command as part of a final answer."
         )
     )
-    # Filter messages to avoid empty inputs
-    messages = [m for m in state["messages"] if m.content.strip()]
-    response = llm.invoke([system_prompt] + messages)
+    
+    messages = state["messages"]
+    # Ensure system prompt is always the first message and updated with search_count
+    filtered_messages = [m for m in messages if not isinstance(m, SystemMessage)]
+    response = llm.invoke([system_prompt] + filtered_messages)
     return {"messages": [response]}
 
 def execute_tools(state: State):
     last_message = state["messages"][-1]
     content = last_message.content
     
-    # NEW: Better Regex that catches "SEARCH_WEB" or "SEARCH_WEB:" or "search_web"
+    # Check if this exact query has already been searched to prevent loops
+    past_queries = [m.content for m in state["messages"]]
+
     pdf_match = re.search(r"SEARCH_PDF:?\s*(.*)", content, re.IGNORECASE)
     web_match = re.search(r"SEARCH_WEB:?\s*(.*)", content, re.IGNORECASE)
 
-    if web_match:
-        query = web_match.group(1).split('\n')[0].strip().replace('"', '')
-        if not query: query = "current president of the United States" # Fallback
-        
-        print(f"--- Action: Searching Web for '{query}' ---")
-        web_result = search_web.invoke({"query": query})
-        
-        # We print a snippet to the console so you can see it's working
-        print(f"--- Web Data Retrieved (first 100 chars): {web_result[:100]} ---")
-        
-        return {"messages": [HumanMessage(content=f"ACTUAL CURRENT WEB DATA: {web_result}")]}
-
     if pdf_match:
         query = pdf_match.group(1).split('\n')[0].strip().replace('"', '')
+        # SAFETY: Stop nonsense searches
+        if len(query) < 2 or "again" in query.lower():
+            return {"messages": [HumanMessage(content="SYSTEM: Invalid search query. Please provide a final answer with what you have.")]}
+        
         print(f"--- Action: Searching PDF for '{query}' ---")
         result = search_pdf.invoke({"query": query})
-        
-        if len(result) < 150:
-            print("--- Grade: PDF insufficient. Switching to Web ---")
-            web_result = search_web.invoke({"query": query})
-            return {"messages": [HumanMessage(content=f"ACTUAL CURRENT WEB DATA: {web_result}")]}
-        
-        return {"messages": [HumanMessage(content=f"PDF Results: {result}")]}
+        return {"messages": [HumanMessage(content=f"INTERNAL PDF RESULTS: {result}")]}
+
+    if web_match:
+        query = web_match.group(1).split('\n')[0].strip().replace('"', '')
+        # SAFETY: Stop nonsense searches
+        if len(query) < 2 or "again" in query.lower():
+             return {"messages": [HumanMessage(content="SYSTEM: Invalid search query. Please provide a final answer.")]}
+             
+        print(f"--- Action: Searching Web for '{query}' ---")
+        web_result = search_web.invoke({"query": query})
+        return {"messages": [HumanMessage(content=f"WEB SEARCH RESULTS: {web_result}")]}
     
     return {"messages": []}
 
+
 def should_continue(state: State):
     last_message = state["messages"][-1]
-    content = last_message.content.upper()
-    if "SEARCH_PDF" in content or "SEARCH_WEB" in content:
-        return "tools"
-    return END
+    content = last_message.content
+    
+    # Logic to stop the loop:
+    # 1. If the model didn't output a search command, stop.
+    if "SEARCH_PDF" not in content.upper() and "SEARCH_WEB" not in content.upper():
+        return END
+    
+    # 2. If we already have 2 or more results, force a stop to prevent infinite loops
+    search_count = sum(1 for m in state["messages"] if "RESULTS:" in m.content)
+    if search_count >= 2:
+        return END
+        
+    return "tools"
+
 
     
 # Build the Graph
